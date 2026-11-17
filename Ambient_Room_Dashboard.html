@@ -1,0 +1,866 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Room Ambient Dashboard</title>
+
+  <!-- Google Fonts: Inter for UI & JetBrains Mono for crisp tabular numbers -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+
+  <!-- Tailwind CSS via CDN (Zero build step needed for GitHub Pages) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          colors: {
+            obsidian: '#0b0d12',
+            card: 'rgba(255, 255, 255, 0.035)',
+            cardHover: 'rgba(255, 255, 255, 0.055)',
+          }
+        }
+      }
+    };
+  </script>
+
+  <style>
+    /* Custom ambient background glow and smooth glassmorphism styling */
+    body {
+      background-color: #0b0d12;
+      background-image:
+        radial-gradient(circle at 15% 15%, rgba(56, 189, 248, 0.08) 0%, transparent 45%),
+        radial-gradient(circle at 85% 80%, rgba(139, 92, 246, 0.08) 0%, transparent 45%);
+      color: #f8fafc;
+      user-select: none;
+    }
+
+    .glass-card {
+      background: rgba(255, 255, 255, 0.035);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+      transition: border-color 0.25s ease, background 0.25s ease;
+    }
+
+    .glass-card:hover {
+      border-color: rgba(255, 255, 255, 0.14);
+    }
+
+    /* Animated Equalizer Bars for the Music Widget */
+    @keyframes eqBounce {
+      0%, 100% { height: 25%; }
+      50% { height: 100%; }
+    }
+
+    .eq-bar {
+      animation: eqBounce 1s ease-in-out infinite;
+    }
+    .eq-bar:nth-child(2) { animation-delay: 0.2s; animation-duration: 0.85s; }
+    .eq-bar:nth-child(3) { animation-delay: 0.4s; animation-duration: 1.15s; }
+    .eq-bar:nth-child(4) { animation-delay: 0.15s; animation-duration: 0.95s; }
+
+    .eq-paused .eq-bar {
+      animation-play-state: paused;
+      height: 25% !important;
+    }
+
+    /* Subtle custom scrollbar for task/schedule overflow on smaller displays */
+    ::-webkit-scrollbar {
+      width: 4px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.12);
+      border-radius: 9999px;
+    }
+  </style>
+</head>
+
+<body class="min-h-screen lg:h-screen lg:overflow-hidden flex flex-col justify-between p-4 sm:p-6 lg:p-8 antialiased">
+
+  <!-- ===================================================================== -->
+  <!-- TOP UTILITY BAR (Status + Kiosk Fullscreen Button)                    -->
+  <!-- ===================================================================== -->
+  <header class="flex items-center justify-between mb-4 lg:mb-5 shrink-0">
+    <div class="flex items-center gap-3">
+      <span class="relative flex h-2.5 w-2.5">
+        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+        <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+      </span>
+      <span class="text-xs font-mono uppercase tracking-widest text-slate-400">
+        Ambient Display &bull; Live
+      </span>
+    </div>
+
+    <div class="flex items-center gap-2">
+      <!-- Toggle 12H / 24H format -->
+      <button
+        id="toggle-format-btn"
+        title="Switch 12h / 24h clock format"
+        class="px-3 py-1.5 rounded-xl text-xs font-mono text-slate-300 bg-white/5 hover:bg-white/10 border border-white/10 transition cursor-pointer"
+      >
+        12H
+      </button>
+
+      <!-- Kiosk Fullscreen Button -->
+      <button
+        id="fullscreen-btn"
+        title="Toggle Fullscreen Kiosk Mode"
+        class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium text-slate-200 bg-white/5 hover:bg-white/10 border border-white/10 transition cursor-pointer"
+      >
+        <svg id="fullscreen-icon" class="w-3.5 h-3.5 text-sky-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+        </svg>
+        <span id="fullscreen-label">Fullscreen</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- ===================================================================== -->
+  <!-- MAIN BENTO GRID LAYOUT                                                -->
+  <!-- ===================================================================== -->
+  <main class="flex-1 grid grid-cols-1 md:grid-cols-12 lg:grid-rows-6 gap-4 sm:gap-5 min-h-0">
+
+    <!-- 1. HERO CLOCK & GREETING WIDGET (Top-Left, Large) -->
+    <section class="glass-card rounded-3xl p-6 sm:p-8 md:col-span-7 lg:row-span-3 flex flex-col justify-between relative overflow-hidden">
+      <div class="flex items-start justify-between gap-4">
+        <div>
+          <p id="greeting-text" class="text-lg sm:text-xl font-medium text-sky-400 tracking-tight">
+            Good morning, Alex
+          </p>
+          <p id="date-text" class="text-sm sm:text-base text-slate-400 mt-1">
+            Loading date...
+          </p>
+        </div>
+        <span id="timezone-badge" class="text-xs font-mono px-2.5 py-1 rounded-lg bg-white/5 text-slate-400 border border-white/5">
+          LOCAL
+        </span>
+      </div>
+
+      <div class="my-4 lg:my-0 flex items-baseline gap-3">
+        <h1 id="clock-time" class="font-mono text-6xl sm:text-7xl xl:text-8xl font-semibold tracking-tight text-white leading-none">
+          12:00
+        </h1>
+        <div class="flex flex-col">
+          <span id="clock-ampm" class="font-mono text-lg sm:text-xl font-medium text-sky-400 uppercase">
+            PM
+          </span>
+          <span id="clock-seconds" class="font-mono text-sm sm:text-base text-slate-500">
+            00
+          </span>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-between text-xs text-slate-400 pt-2 border-t border-white/5">
+        <span id="quote-text" class="truncate italic text-slate-400">
+          "Focus on progress, not perfection."
+        </span>
+      </div>
+    </section>
+
+    <!-- 2. LIVE WEATHER WIDGET (Top-Right) -->
+    <section class="glass-card rounded-3xl p-6 sm:p-7 md:col-span-5 lg:row-span-3 flex flex-col justify-between">
+      <div class="flex items-center justify-between">
+        <div>
+          <span class="text-xs font-mono uppercase tracking-wider text-slate-400">Weather</span>
+          <h2 id="weather-city" class="text-base sm:text-lg font-semibold text-white mt-0.5">
+            Flower Mound, TX
+          </h2>
+        </div>
+        <span id="weather-source-badge" class="text-[11px] font-mono px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+          LIVE
+        </span>
+      </div>
+
+      <div class="flex items-center justify-between my-3">
+        <div class="flex items-center gap-4">
+          <div id="weather-icon" class="text-4xl sm:text-5xl select-none">
+            ⛅
+          </div>
+          <div>
+            <div class="flex items-start">
+              <span id="weather-temp" class="font-mono text-5xl sm:text-6xl font-semibold text-white tracking-tight">
+                --
+              </span>
+              <span id="weather-unit" class="font-mono text-xl text-slate-400 mt-1 ml-1">°F</span>
+            </div>
+            <p id="weather-desc" class="text-sm text-slate-300 capitalize mt-0.5">
+              Fetching forecast...
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- High/Low, Humidity & Wind Stats -->
+      <div class="grid grid-cols-3 gap-2 pt-3 border-t border-white/5 text-center">
+        <div class="bg-white/[0.02] rounded-2xl py-2 px-2">
+          <p class="text-[11px] text-slate-400 uppercase font-mono">High / Low</p>
+          <p id="weather-highlow" class="text-sm font-mono font-medium text-slate-200 mt-0.5">--° / --°</p>
+        </div>
+        <div class="bg-white/[0.02] rounded-2xl py-2 px-2">
+          <p class="text-[11px] text-slate-400 uppercase font-mono">Humidity</p>
+          <p id="weather-humidity" class="text-sm font-mono font-medium text-slate-200 mt-0.5">--%</p>
+        </div>
+        <div class="bg-white/[0.02] rounded-2xl py-2 px-2">
+          <p class="text-[11px] text-slate-400 uppercase font-mono">Wind</p>
+          <p id="weather-wind" class="text-sm font-mono font-medium text-slate-200 mt-0.5">-- mph</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3. NOW PLAYING (MUSIC) WIDGET (Bottom-Left) -->
+    <section class="glass-card rounded-3xl p-6 sm:p-7 md:col-span-4 lg:row-span-3 flex flex-col justify-between">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <span class="text-xs font-mono uppercase tracking-wider text-slate-400">Now Playing</span>
+          <!-- Animated Equalizer -->
+          <div id="music-eq" class="flex items-end gap-0.5 h-3.5 ml-1">
+            <span class="eq-bar w-0.5 bg-violet-400 rounded-full"></span>
+            <span class="eq-bar w-0.5 bg-violet-400 rounded-full"></span>
+            <span class="eq-bar w-0.5 bg-violet-400 rounded-full"></span>
+            <span class="eq-bar w-0.5 bg-violet-400 rounded-full"></span>
+          </div>
+        </div>
+        <span id="music-status-badge" class="text-[11px] font-mono px-2 py-0.5 rounded-md bg-violet-500/10 text-violet-300 border border-violet-500/20">
+          DEMO MODE
+        </span>
+      </div>
+
+      <div class="flex items-center gap-4 my-3">
+        <!-- Album Art Container with SVG Fallback -->
+        <div id="music-art-wrapper" class="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-gradient-to-br from-violet-600/40 to-sky-600/40 border border-white/10 flex items-center justify-center shrink-0 overflow-hidden shadow-lg">
+          <img
+            id="music-album-art"
+            src=""
+            alt="Album Cover"
+            class="w-full h-full object-cover hidden"
+            onerror="this.classList.add('hidden'); document.getElementById('music-art-fallback').classList.remove('hidden');"
+          />
+          <svg id="music-art-fallback" class="w-8 h-8 text-violet-300" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+          </svg>
+        </div>
+
+        <div class="min-w-0 flex-1">
+          <h3 id="music-title" class="text-base sm:text-lg font-semibold text-white truncate">
+            Midnight City
+          </h3>
+          <p id="music-artist" class="text-sm text-slate-400 truncate mt-0.5">
+            M83 &bull; Hurry Up, We're Dreaming
+          </p>
+        </div>
+      </div>
+
+      <!-- Progress Bar -->
+      <div class="pt-2">
+        <div class="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
+          <div id="music-progress-bar" class="h-full bg-gradient-to-r from-violet-400 to-sky-400 rounded-full transition-all duration-1000" style="width: 42%;"></div>
+        </div>
+        <div class="flex justify-between text-[11px] font-mono text-slate-500 mt-1.5">
+          <span id="music-elapsed">1:42</span>
+          <span id="music-duration">4:03</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. TODAY'S SCHEDULE / AGENDA WIDGET (Bottom-Center) -->
+    <section class="glass-card rounded-3xl p-6 sm:p-7 md:col-span-4 lg:row-span-3 flex flex-col justify-between min-h-0">
+      <div class="flex items-center justify-between mb-3 shrink-0">
+        <span class="text-xs font-mono uppercase tracking-wider text-slate-400">Today's Agenda</span>
+        <span id="calendar-status-badge" class="text-[11px] font-mono px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-300 border border-amber-500/20">
+          SAMPLE DATA
+        </span>
+      </div>
+
+      <div id="calendar-list" class="flex-1 overflow-y-auto space-y-2.5 pr-1">
+        <!-- Populated dynamically via JavaScript -->
+      </div>
+    </section>
+
+    <!-- 5. QUICK FOCUS / DAILY TASKS WIDGET (Bottom-Right, Persistent via localStorage) -->
+    <section class="glass-card rounded-3xl p-6 sm:p-7 md:col-span-4 lg:row-span-3 flex flex-col justify-between min-h-0">
+      <div class="flex items-center justify-between mb-3 shrink-0">
+        <span class="text-xs font-mono uppercase tracking-wider text-slate-400">Daily Focus</span>
+        <span id="task-counter" class="text-xs font-mono text-slate-400">0/0 done</span>
+      </div>
+
+      <!-- Task List -->
+      <ul id="task-list" class="flex-1 overflow-y-auto space-y-2 pr-1">
+        <!-- Populated dynamically from localStorage -->
+      </ul>
+
+      <!-- Add New Task Input -->
+      <form id="task-form" class="mt-3 pt-2.5 border-t border-white/5 flex items-center gap-2 shrink-0">
+        <input
+          id="task-input"
+          type="text"
+          placeholder="Add a focus item..."
+          maxlength="60"
+          class="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs sm:text-sm text-white placeholder-slate-500 focus:outline-none focus:border-sky-400/50 transition"
+        />
+        <button
+          type="submit"
+          aria-label="Add task"
+          class="p-2 rounded-xl bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-400/20 transition cursor-pointer shrink-0"
+        >
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+          </svg>
+        </button>
+      </form>
+    </section>
+
+  </main>
+
+  <!-- ===================================================================== -->
+  <!-- JAVASCRIPT: CONFIG + MODULAR API CONNECTORS                           -->
+  <!-- ===================================================================== -->
+  <script>
+    /**
+     * =========================================================================
+     * 1. DASHBOARD CONFIGURATION (EDIT THIS SECTION TO CUSTOMIZE YOUR SCREEN)
+     * =========================================================================
+     * Everything you need to personalize your room display or plug in APIs
+     * is right here. Because GitHub Pages hosts static files, avoid putting
+     * private secret keys directly in public repositories—use free public APIs
+     * or a serverless proxy (like Cloudflare Workers / Netlify Functions).
+     */
+    const DASHBOARD_CONFIG = {
+      // Your name shown in the greeting
+      userName: "Alex",
+
+      // Clock settings
+      use24HourClock: false,
+
+      // Weather settings (Uses Open-Meteo by default: 100% free, NO API key needed!)
+      // Find your exact coordinates at: https://www.latlong.net/
+      weather: {
+        city: "Flower Mound, TX",
+        latitude: 33.0146,
+        longitude: -97.0969,
+        useFahrenheit: true, // Set to false for Celsius
+        refreshMinutes: 15,
+
+        // Optional: If you prefer OpenWeatherMap instead of Open-Meteo,
+        // set useOpenWeatherMap: true and paste your API key below.
+        useOpenWeatherMap: false,
+        openWeatherApiKey: "YOUR_OPENWEATHERMAP_API_KEY"
+      },
+
+      // Spotify / Music Now Playing settings
+      spotify: {
+        // Change `enabled` to `true` once you add your endpoint URL below
+        enabled: false,
+        // Point this to a serverless endpoint (e.g., Cloudflare Worker / Vercel / Netlify function)
+        // that returns JSON: { isPlaying: true, title: "...", artist: "...", albumArt: "...", progressPercent: 50, elapsed: "1:20", duration: "3:45" }
+        apiEndpoint: "YOUR_SPOTIFY_PROXY_ENDPOINT_HERE",
+        refreshSeconds: 10,
+
+        // Shown automatically when `enabled` is false or while offline
+        fallbackTrack: {
+          title: "Midnight City",
+          artist: "M83 • Hurry Up, We're Dreaming",
+          albumArt: "", // Leave empty for clean vector fallback icon, or paste an image URL
+          isPlaying: true,
+          progressPercent: 42,
+          elapsed: "1:42",
+          duration: "4:03"
+        }
+      },
+
+      // Calendar / Schedule settings
+      calendar: {
+        // Change `enabled` to `true` once you add your endpoint URL below
+        enabled: false,
+        // Point this to a JSON feed or Google Apps Script Web App URL returning an array of events:
+        // [{ time: "09:30 AM", title: "Morning Workout", tag: "Health", color: "emerald" }, ...]
+        apiEndpoint: "YOUR_CALENDAR_JSON_ENDPOINT_HERE",
+        refreshMinutes: 10,
+
+        // Shown automatically when `enabled` is false
+        fallbackEvents: [
+          { time: "09:30 AM", title: "Morning Deep Work Session", tag: "Focus", color: "sky" },
+          { time: "12:15 PM", title: "Lunch & Walk Outside", tag: "Break", color: "emerald" },
+          { time: "03:00 PM", title: "Project Sync / Study Block", tag: "Work", color: "violet" },
+          { time: "06:30 PM", title: "Gym & Dinner", tag: "Personal", color: "amber" }
+        ]
+      }
+    };
+
+    /**
+     * =========================================================================
+     * 2. CLOCK & GREETING MODULE
+     * =========================================================================
+     */
+    const ClockModule = (() => {
+      const clockTimeEl = document.getElementById("clock-time");
+      const clockAmPmEl = document.getElementById("clock-ampm");
+      const clockSecondsEl = document.getElementById("clock-seconds");
+      const dateTextEl = document.getElementById("date-text");
+      const greetingTextEl = document.getElementById("greeting-text");
+      const timezoneBadgeEl = document.getElementById("timezone-badge");
+      const toggleFormatBtn = document.getElementById("toggle-format-btn");
+
+      let is24Hour = DASHBOARD_CONFIG.use24HourClock;
+
+      // Display short timezone code (e.g., CST, EST, PST)
+      try {
+        const tz = Intl.DateTimeFormat("en-US", { timeZoneName: "short" })
+          .formatToParts(new Date())
+          .find(part => part.type === "timeZoneName")?.value;
+        if (tz) timezoneBadgeEl.textContent = tz;
+      } catch (e) {
+        timezoneBadgeEl.textContent = "LOCAL";
+      }
+
+      function updateClock() {
+        const now = new Date();
+        let hours = now.getHours();
+        const minutes = String(now.getMinutes()).padStart(2, "0");
+        const seconds = String(now.getSeconds()).padStart(2, "0");
+
+        // Dynamic Greeting based on hour of day
+        let greeting = "Good evening";
+        if (hours >= 5 && hours < 12) greeting = "Good morning";
+        else if (hours >= 12 && hours < 17) greeting = "Good afternoon";
+        else if (hours >= 17 && hours < 22) greeting = "Good evening";
+        else greeting = "Late night mode";
+
+        greetingTextEl.textContent = `${greeting}, ${DASHBOARD_CONFIG.userName}`;
+
+        // Format Hours (12h vs 24h)
+        if (is24Hour) {
+          clockTimeEl.textContent = `${String(hours).padStart(2, "0")}:${minutes}`;
+          clockAmPmEl.classList.add("hidden");
+          toggleFormatBtn.textContent = "24H";
+        } else {
+          const ampm = hours >= 12 ? "PM" : "AM";
+          hours = hours % 12 || 12;
+          clockTimeEl.textContent = `${hours}:${minutes}`;
+          clockAmPmEl.textContent = ampm;
+          clockAmPmEl.classList.remove("hidden");
+          toggleFormatBtn.textContent = "12H";
+        }
+
+        clockSecondsEl.textContent = seconds;
+
+        // Format Full Date (e.g., "Tuesday, November 17, 2026")
+        dateTextEl.textContent = now.toLocaleDateString("en-US", {
+          weekday: "long",
+          month: "long",
+          day: "numeric",
+          year: "numeric"
+        });
+      }
+
+      toggleFormatBtn.addEventListener("click", () => {
+        is24Hour = !is24Hour;
+        updateClock();
+      });
+
+      function init() {
+        updateClock();
+        setInterval(updateClock, 1000);
+      }
+
+      return { init };
+    })();
+
+    /**
+     * =========================================================================
+     * 3. LIVE WEATHER MODULE (Open-Meteo + Optional OpenWeatherMap)
+     * =========================================================================
+     */
+    const WeatherModule = (() => {
+      const cityEl = document.getElementById("weather-city");
+      const tempEl = document.getElementById("weather-temp");
+      const unitEl = document.getElementById("weather-unit");
+      const descEl = document.getElementById("weather-desc");
+      const iconEl = document.getElementById("weather-icon");
+      const highLowEl = document.getElementById("weather-highlow");
+      const humidityEl = document.getElementById("weather-humidity");
+      const windEl = document.getElementById("weather-wind");
+      const badgeEl = document.getElementById("weather-source-badge");
+
+      cityEl.textContent = DASHBOARD_CONFIG.weather.city;
+      unitEl.textContent = DASHBOARD_CONFIG.weather.useFahrenheit ? "°F" : "°C";
+
+      // Maps WMO weather codes from Open-Meteo into clean icons & labels
+      function decodeWmoWeather(code) {
+        const map = {
+          0: { icon: "☀️", label: "Clear sky" },
+          1: { icon: "🌤️", label: "Mainly clear" },
+          2: { icon: "⛅", label: "Partly cloudy" },
+          3: { icon: "☁️", label: "Overcast" },
+          45: { icon: "🌫️", label: "Foggy" },
+          48: { icon: "🌫️", label: "Depositing rime fog" },
+          51: { icon: "🌦️", label: "Light drizzle" },
+          53: { icon: "🌦️", label: "Moderate drizzle" },
+          55: { icon: "🌧️", label: "Dense drizzle" },
+          61: { icon: "🌧️", label: "Slight rain" },
+          63: { icon: "🌧️", label: "Moderate rain" },
+          65: { icon: "⛈️", label: "Heavy rain" },
+          71: { icon: "🌨️", label: "Slight snow" },
+          73: { icon: "❄️", label: "Moderate snow" },
+          75: { icon: "❄️", label: "Heavy snow" },
+          80: { icon: "🌦️", label: "Rain showers" },
+          81: { icon: "🌧️", label: "Moderate showers" },
+          82: { icon: "⛈️", label: "Violent showers" },
+          95: { icon: "⛈️", label: "Thunderstorm" }
+        };
+        return map[code] || { icon: "🌡️", label: "Ambient conditions" };
+      }
+
+      async function fetchWeather() {
+        const { latitude, longitude, useFahrenheit, useOpenWeatherMap, openWeatherApiKey } = DASHBOARD_CONFIG.weather;
+
+        try {
+          if (useOpenWeatherMap && openWeatherApiKey !== "YOUR_OPENWEATHERMAP_API_KEY") {
+            // <-- OPTIONAL OPENWEATHERMAP API CONNECTOR
+            const units = useFahrenheit ? "imperial" : "metric";
+            const url = `https://api.openweathermap.org/data/2.5/weather?lat=${latitude}&lon=${longitude}&units=${units}&appid=${openWeatherApiKey}`;
+            const res = await fetch(url);
+            if (!res.ok) throw new Error("OpenWeatherMap request failed");
+            const data = await res.json();
+
+            tempEl.textContent = Math.round(data.main.temp);
+            descEl.textContent = data.weather[0].description;
+            highLowEl.textContent = `${Math.round(data.main.temp_max)}° / ${Math.round(data.main.temp_min)}°`;
+            humidityEl.textContent = `${data.main.humidity}%`;
+            windEl.textContent = `${Math.round(data.wind.speed)} ${useFahrenheit ? "mph" : "m/s"}`;
+            iconEl.textContent = "🌤️";
+          } else {
+            // DEFAULT: Open-Meteo Free API (Zero API key required!)
+            const tempUnit = useFahrenheit ? "fahrenheit" : "celsius";
+            const windUnit = useFahrenheit ? "mph" : "kmh";
+            const url = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min&temperature_unit=${tempUnit}&wind_speed_unit=${windUnit}&timezone=auto`;
+
+            const res = await fetch(url);
+            if (!res.ok) throw new Error("Open-Meteo request failed");
+            const data = await res.json();
+
+            const current = data.current;
+            const daily = data.daily;
+            const condition = decodeWmoWeather(current.weather_code);
+
+            tempEl.textContent = Math.round(current.temperature_2m);
+            descEl.textContent = condition.label;
+            iconEl.textContent = condition.icon;
+            highLowEl.textContent = `${Math.round(daily.temperature_2m_max[0])}° / ${Math.round(daily.temperature_2m_min[0])}°`;
+            humidityEl.textContent = `${current.relative_humidity_2m}%`;
+            windEl.textContent = `${Math.round(current.wind_speed_10m)} ${windUnit}`;
+          }
+
+          badgeEl.textContent = "LIVE";
+          badgeEl.className = "text-[11px] font-mono px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20";
+        } catch (err) {
+          console.error("Weather fetch error:", err);
+          descEl.textContent = "Offline / Retry soon";
+          badgeEl.textContent = "OFFLINE";
+          badgeEl.className = "text-[11px] font-mono px-2 py-0.5 rounded-md bg-rose-500/10 text-rose-400 border border-rose-500/20";
+        }
+      }
+
+      function init() {
+        fetchWeather();
+        setInterval(fetchWeather, DASHBOARD_CONFIG.weather.refreshMinutes * 60 * 1000);
+      }
+
+      return { init };
+    })();
+
+    /**
+     * =========================================================================
+     * 4. NOW PLAYING (SPOTIFY / MUSIC) MODULE
+     * =========================================================================
+     */
+    const MusicModule = (() => {
+      const titleEl = document.getElementById("music-title");
+      const artistEl = document.getElementById("music-artist");
+      const artImgEl = document.getElementById("music-album-art");
+      const artFallbackEl = document.getElementById("music-art-fallback");
+      const eqEl = document.getElementById("music-eq");
+      const badgeEl = document.getElementById("music-status-badge");
+      const progressBarEl = document.getElementById("music-progress-bar");
+      const elapsedEl = document.getElementById("music-elapsed");
+      const durationEl = document.getElementById("music-duration");
+
+      function renderTrack(track, isLive = false) {
+        titleEl.textContent = track.title || "Nothing Playing";
+        artistEl.textContent = track.artist || "Spotify";
+        progressBarEl.style.width = `${Math.min(100, Math.max(0, track.progressPercent || 0))}%`;
+        elapsedEl.textContent = track.elapsed || "0:00";
+        durationEl.textContent = track.duration || "0:00";
+
+        if (track.albumArt) {
+          artImgEl.src = track.albumArt;
+          artImgEl.classList.remove("hidden");
+          artFallbackEl.classList.add("hidden");
+        } else {
+          artImgEl.classList.add("hidden");
+          artFallbackEl.classList.remove("hidden");
+        }
+
+        if (track.isPlaying) {
+          eqEl.classList.remove("eq-paused");
+        } else {
+          eqEl.classList.add("eq-paused");
+        }
+
+        if (isLive) {
+          badgeEl.textContent = "LIVE API";
+          badgeEl.className = "text-[11px] font-mono px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20";
+        } else {
+          badgeEl.textContent = "DEMO MODE";
+          badgeEl.className = "text-[11px] font-mono px-2 py-0.5 rounded-md bg-violet-500/10 text-violet-300 border border-violet-500/20";
+        }
+      }
+
+      async function fetchNowPlaying() {
+        // If Spotify API isn't enabled yet, show the clean demo fallback track
+        if (!DASHBOARD_CONFIG.spotify.enabled) {
+          renderTrack(DASHBOARD_CONFIG.spotify.fallbackTrack, false);
+          return;
+        }
+
+        try {
+          // <-- PLUG YOUR SPOTIFY / MUSIC API HERE
+          // Your endpoint should return JSON matching the fallbackTrack structure:
+          // { isPlaying: true, title: "Song", artist: "Artist", albumArt: "https://...", progressPercent: 60, elapsed: "2:10", duration: "3:40" }
+          const response = await fetch(DASHBOARD_CONFIG.spotify.apiEndpoint);
+          if (!response.ok) throw new Error("Spotify endpoint returned an error");
+          const data = await response.json();
+
+          renderTrack(data, true);
+        } catch (error) {
+          console.error("Spotify API Error:", error);
+          renderTrack(DASHBOARD_CONFIG.spotify.fallbackTrack, false);
+        }
+      }
+
+      function init() {
+        fetchNowPlaying();
+        setInterval(fetchNowPlaying, DASHBOARD_CONFIG.spotify.refreshSeconds * 1000);
+      }
+
+      return { init };
+    })();
+
+    /**
+     * =========================================================================
+     * 5. CALENDAR / TODAY'S AGENDA MODULE
+     * =========================================================================
+     */
+    const CalendarModule = (() => {
+      const listEl = document.getElementById("calendar-list");
+      const badgeEl = document.getElementById("calendar-status-badge");
+
+      const colorMap = {
+        sky: "bg-sky-400/15 text-sky-300 border-sky-400/20",
+        emerald: "bg-emerald-400/15 text-emerald-300 border-emerald-400/20",
+        violet: "bg-violet-400/15 text-violet-300 border-violet-400/20",
+        amber: "bg-amber-400/15 text-amber-300 border-amber-400/20",
+        rose: "bg-rose-400/15 text-rose-300 border-rose-400/20"
+      };
+
+      function renderEvents(events, isLive = false) {
+        listEl.innerHTML = "";
+
+        if (!events || events.length === 0) {
+          listEl.innerHTML = `<p class="text-sm text-slate-500 italic py-4 text-center">No upcoming events today.</p>`;
+          return;
+        }
+
+        events.forEach(event => {
+          const badgeStyle = colorMap[event.color] || colorMap.sky;
+          const item = document.createElement("div");
+          item.className = "flex items-center justify-between gap-3 p-2.5 rounded-2xl bg-white/[0.025] border border-white/5 hover:border-white/10 transition";
+
+          item.innerHTML = `
+            <div class="min-w-0">
+              <p class="text-xs font-mono text-slate-400">${event.time}</p>
+              <p class="text-sm font-medium text-slate-100 truncate mt-0.5">${event.title}</p>
+            </div>
+            ${event.tag ? `<span class="text-[11px] font-mono px-2 py-0.5 rounded-lg border shrink-0 ${badgeStyle}">${event.tag}</span>` : ""}
+          `;
+          listEl.appendChild(item);
+        });
+
+        if (isLive) {
+          badgeEl.textContent = "LIVE SYNC";
+          badgeEl.className = "text-[11px] font-mono px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20";
+        } else {
+          badgeEl.textContent = "SAMPLE DATA";
+          badgeEl.className = "text-[11px] font-mono px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-300 border border-amber-500/20";
+        }
+      }
+
+      async function fetchCalendarEvents() {
+        if (!DASHBOARD_CONFIG.calendar.enabled) {
+          renderEvents(DASHBOARD_CONFIG.calendar.fallbackEvents, false);
+          return;
+        }
+
+        try {
+          // <-- PLUG YOUR CALENDAR API HERE
+          // Your endpoint should return an array of objects:
+          // [{ time: "10:00 AM", title: "Event Name", tag: "Tag", color: "sky" }, ...]
+          const response = await fetch(DASHBOARD_CONFIG.calendar.apiEndpoint);
+          if (!response.ok) throw new Error("Calendar endpoint returned an error");
+          const events = await response.json();
+
+          renderEvents(events, true);
+        } catch (error) {
+          console.error("Calendar API Error:", error);
+          renderEvents(DASHBOARD_CONFIG.calendar.fallbackEvents, false);
+        }
+      }
+
+      function init() {
+        fetchCalendarEvents();
+        setInterval(fetchCalendarEvents, DASHBOARD_CONFIG.calendar.refreshMinutes * 60 * 1000);
+      }
+
+      return { init };
+    })();
+
+    /**
+     * =========================================================================
+     * 6. INTERACTIVE DAILY FOCUS TASKS (SAVED IN LOCALSTORAGE)
+     * =========================================================================
+     */
+    const TasksModule = (() => {
+      const STORAGE_KEY = "room_dashboard_tasks_v1";
+      const listEl = document.getElementById("task-list");
+      const formEl = document.getElementById("task-form");
+      const inputEl = document.getElementById("task-input");
+      const counterEl = document.getElementById("task-counter");
+
+      let tasks = JSON.parse(localStorage.getItem(STORAGE_KEY)) || [
+        { id: 1, text: "Deploy dashboard to GitHub Pages", done: true },
+        { id: 2, text: "Connect Spotify or Calendar API", done: false },
+        { id: 3, text: "Set display to Kiosk Fullscreen", done: false }
+      ];
+
+      function saveTasks() {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
+      }
+
+      function renderTasks() {
+        listEl.innerHTML = "";
+        const completedCount = tasks.filter(t => t.done).length;
+        counterEl.textContent = `${completedCount}/${tasks.length} done`;
+
+        tasks.forEach(task => {
+          const li = document.createElement("li");
+          li.className = "group flex items-center justify-between gap-2 p-2 rounded-xl bg-white/[0.02] hover:bg-white/[0.04] border border-white/5 transition";
+
+          li.innerHTML = `
+            <button type="button" class="flex items-center gap-2.5 text-left flex-1 min-w-0 cursor-pointer">
+              <span class="w-4 h-4 rounded-md flex items-center justify-center border transition shrink-0 ${
+                task.done
+                  ? "bg-sky-500 border-sky-400 text-slate-950"
+                  : "border-slate-600 group-hover:border-slate-400"
+              }">
+                ${task.done ? `<svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>` : ""}
+              </span>
+              <span class="text-xs sm:text-sm truncate ${task.done ? "line-through text-slate-500" : "text-slate-200"}">
+                ${task.text}
+              </span>
+            </button>
+            <button type="button" aria-label="Delete task" class="delete-btn opacity-0 group-hover:opacity-100 text-slate-500 hover:text-rose-400 px-1 transition cursor-pointer">
+              &times;
+            </button>
+          `;
+
+          // Toggle completion
+          li.querySelector("button:first-child").addEventListener("click", () => {
+            task.done = !task.done;
+            saveTasks();
+            renderTasks();
+          });
+
+          // Delete item
+          li.querySelector(".delete-btn").addEventListener("click", () => {
+            tasks = tasks.filter(t => t.id !== task.id);
+            saveTasks();
+            renderTasks();
+          });
+
+          listEl.appendChild(li);
+        });
+      }
+
+      formEl.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const text = inputEl.value.trim();
+        if (!text) return;
+
+        tasks.push({ id: Date.now(), text, done: false });
+        inputEl.value = "";
+        saveTasks();
+        renderTasks();
+      });
+
+      function init() {
+        renderTasks();
+      }
+
+      return { init };
+    })();
+
+    /**
+     * =========================================================================
+     * 7. FULLSCREEN KIOSK MODE HANDLER
+     * =========================================================================
+     */
+    const FullscreenModule = (() => {
+      const btn = document.getElementById("fullscreen-btn");
+      const label = document.getElementById("fullscreen-label");
+
+      btn.addEventListener("click", async () => {
+        try {
+          if (!document.fullscreenElement) {
+            await document.documentElement.requestFullscreen();
+            label.textContent = "Exit Fullscreen";
+          } else {
+            await document.exitFullscreen();
+            label.textContent = "Fullscreen";
+          }
+        } catch (err) {
+          console.warn("Fullscreen request blocked by browser:", err);
+        }
+      });
+
+      document.addEventListener("fullscreenchange", () => {
+        label.textContent = document.fullscreenElement ? "Exit Fullscreen" : "Fullscreen";
+      });
+    })();
+
+    /**
+     * =========================================================================
+     * INITIALIZE ALL DASHBOARD WIDGETS ON LOAD
+     * =========================================================================
+     */
+    window.addEventListener("DOMContentLoaded", () => {
+      ClockModule.init();
+      WeatherModule.init();
+      MusicModule.init();
+      CalendarModule.init();
+      TasksModule.init();
+    });
+  </script>
+</body>
+</html>
